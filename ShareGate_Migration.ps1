@@ -1,51 +1,76 @@
 # Import ShareGate PowerShell Module
 Import-Module Sharegate
 
-$MyDir = "C:\Users\rajab\Downloads\Mayflower\PnP\"
+$MyDir = "C:\Users\RBandla\Documents\SG_MigrationScripts"
+
+.\SGUM_UserAndGroupMappings.ps1
+#.\Creds.ps1
+
+
 # Define paths
-$csvFile = $MyDir + "migration.csv"  # Path to CSV file
-$sgumFile = $MyDir + "usermappings.sgum"  # Path to SGUM user mapping file
-$logFile = $MyDir + "migration_log.txt"  # Log file for tracking migrations
+$sitesInputFile = $MyDir + "\sitemappings_batch1.csv"  # Path to site mappings csv input file
+$sgumFile = $MyDir + "\M365map.sgum"  # Path to refer SGUM user mapping file
+$batch = ([System.IO.Path]::GetFileNameWithoutExtension($sitesInputFile)) -split "_" | Select-Object -Last 1
+$logFile = $MyDir + "\logs\$($batch)_migration_log.txt"  # Log file for tracking migrations
 
 # User input for Insane Mode or Normal Mode
 $useInsaneMode = Read-Host "Do you want to use Insane Mode? (yes/no)"
 $insaneMode = $false
-if ($useInsaneMode -eq "yes") {
+if ($useInsaneMode.ToLower().Trim() -eq "yes") {
     $insaneMode = $true
 }
 
 # User input for Delta Migration
 $performDelta = Read-Host "Do you want to perform a Delta Migration? (yes/no)"
 $copySettings = New-CopySettings
-if ($performDelta -eq "yes") {
+if ($performDelta.ToLower().Trim() -eq "yes") {
     $copySettings = New-CopySettings -OnContentItemExists IncrementalUpdate
 }
 
 # User input for Pre-check
 $runPreCheck = Read-Host "Do you want to run a Pre-check before migration? (yes/no)"
 $preCheck = $false
-if ($runPreCheck -eq "yes") {
+if ($runPreCheck.ToLower().Trim() -eq "yes") {
     $preCheck = $true
 }
 
 # Import user mappings
+$mappingSettings = New-MappingSettings
 $mappingSettings = Import-UserAndGroupMapping -Path $sgumFile
 
 # Read migration CSV
-$sites = Import-Csv -Path $csvFile -Delimiter "," 
+$sites = Import-Csv -Path $sitesInputFile -Delimiter "," 
 
 # Loop through each site in CSV
+#$SourceConn = ""
+#$TargetConn = ""
 foreach ($site in $sites) {
-    $sourceSiteURL = $site.SourceSiteURL
-    $targetSiteURL = $site.TargetSiteURL
-    $listNames = $site.ListName  # Can be empty or contain list names separated by "|"
+#$site = $sites[0]
+    $sourceSiteURL = $site.SourceSiteURL.Trim()
+    $targetSiteURL = $site.TargetSiteURL.Trim()
+    $listNames = $site.ListName # Can be empty or contain list names separated by "|"
 
     Write-Host "Starting migration for $sourceSiteURL -> $targetSiteURL" -ForegroundColor Green
     Add-Content -Path $logFile -Value "Starting migration for $sourceSiteURL -> $targetSiteURL"
+    #Clear-Variable $srcSite
+    #Clear-Variable $dstSite
 
     # Connect to source and target sites
-    $srcSite = Connect-Site -Url $sourceSiteURL
-    $dstSite = Connect-Site -Url $targetSiteURL
+    if($SourceConn -eq "") {
+        $SourceConn = Connect-Site -Url $sourceSiteURL -Browser
+        $srcSite = $SourceConn
+    }
+    else {
+        $srcSite = Connect-Site -Url $sourceSiteURL -UseCredentialsFrom $SourceConn
+    }
+
+    if($TargetConn -eq "") {
+        $TargetConn = Connect-Site -Url $targetSiteURL -Browser
+        $dstSite = $TargetConn
+    }
+    else {
+        $dstSite = Connect-Site -Url $targetSiteURL -UseCredentialsFrom $TargetConn
+    }
 
     if (-not $srcSite -or -not $dstSite) {
         Write-Host "Error connecting to sites: $sourceSiteURL or $targetSiteURL" -ForegroundColor Red
@@ -54,10 +79,11 @@ foreach ($site in $sites) {
     }
  
     # If specific lists are provided, only migrate those lists
-    if ($listNames -ne "") {
-        $listsToMigrate = $listNames -split "\|"  # Split list names if multiple lists are provided
+    if ($listNames -and ($listnames -match '\S')) {
+        $listsToMigrate = ($listNames -split "\|").Trim()  # Split list names if multiple lists are provided
 
         foreach ($list in $listsToMigrate) {
+        #$list = $listsToMigrate
             Write-Host "Migrating list: $list from $sourceSiteURL to $targetSiteURL"
             Add-Content -Path $logFile -Value "Migrating list: $list from $sourceSiteURL to $targetSiteURL"
 
@@ -70,7 +96,9 @@ foreach ($site in $sites) {
                 Copy-Content -SourceList $srcList -DestinationList $dstList -MappingSettings $mappingSettings -CopySettings $copySettings -WhatIf
             } else {
                 # Perform Actual Content Migration
-                Copy-Content -SourceList $srcList -DestinationList $dstList -MappingSettings $mappingSettings -CopySettings $copySettings
+                Copy-List -List $srcList -DestinationSite $dstSite
+                # Copy-Content -SourceList $srcList -DestinationList $dstList -MappingSettings $mappingSettings -CopySettings $copySettings
+                Copy-ObjectPermissions -Source $srcSite -Destination $dstSite -MappingSettings $mappingSettings
             }
         }
     } 
@@ -81,15 +109,17 @@ foreach ($site in $sites) {
 
         if ($preCheck) {
             # Pre-check mode (WhatIf)
-            Copy-Site -SourceSite $srcSite -DestinationSite $dstSite -MappingSettings $mappingSettings -CopySettings $copySettings -WhatIf
+            Copy-Site -Site $srcSite -DestinationSite $dstSite -MappingSettings $mappingSettings -CopySettings $copySettings -WhatIf
         } 
         else {
             # Perform Full Site Migration with Insane Mode or Normal Mode
             if ($insaneMode) {
-                Copy-Site -SourceSite $srcSite -DestinationSite $dstSite -MappingSettings $mappingSettings -CopySettings $copySettings -InsaneMode
+                Copy-Site -Site $srcSite -DestinationSite $dstSite -MappingSettings $mappingSettings -CopySettings $copySettings -InsaneMode -Merge -Subsites
+                Copy-ObjectPermissions -Source $srcSite -Destination $dstSite -MappingSettings $mappingSettings
             } 
             else {
-                Copy-Site -SourceSite $srcSite -DestinationSite $dstSite -MappingSettings $mappingSettings -CopySettings $copySettings
+                Copy-Site -Site $srcSite -DestinationSite $dstSite -MappingSettings $mappingSettings -Merge -CopySettings $copySettings -Subsites
+                Copy-ObjectPermissions -Source $srcSite -Destination $dstSite -MappingSettings $mappingSettings
             }
         }
     }
@@ -99,3 +129,5 @@ foreach ($site in $sites) {
 }
 
 Write-Host "Migration process completed! Logs saved to: $logFile" -ForegroundColor Green
+
+
