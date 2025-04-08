@@ -1,2 +1,7 @@
-﻿SourceValue,DestinationValue
-RBandla@flexera.com,RBandla@flexera.com
+SourceValue,DestinationValue,PrincipalType
+AdeleV@m365x76832558.onmicrosoft.com,RBandla@flexera.com,None
+NestorW@m365x76832558.onmicrosoft.com,RBandla@flexera.com,None
+admin@m365x76832558.onmicrosoft.com,RBandla@flexera.com,None
+Benefits Members,Spot_Sharegate_Test_CommunicationSite Members,SharePointGroup
+allcompany@m365x76832558.onmicrosoft.com,Spot_Sharegate_Test_TeamSite@FLEXERA.onmicrosoft.com,SecurityGroup
+Everyone except external users,Everyone except external users,SecurityGroup
