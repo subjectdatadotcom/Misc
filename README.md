@@ -3,3 +3,6 @@
 
 $batchWord = ([System.IO.Path]::GetFileNameWithoutExtension($path)) -split "_" | Select-Object -Last 1
 
+Sharegate - M365 group sync / Graph connection ISSUE
+https://help.sharegate.com/en/articles/10236716-cannot-connect-to-the-office-graph
+https://help.sharegate.com/en/articles/10236689-external-sharing-setting-is-more-permissive
